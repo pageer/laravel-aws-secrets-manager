@@ -13,6 +13,7 @@ class LaravelAwsSecretsManager
     protected $cache;
     protected $cacheExpiry;
     protected $cacheStore;
+    protected $cacheAllSecrets;
     protected $debug;
     protected $enabledEnvironments;
     protected $listTag;
@@ -29,6 +30,8 @@ class LaravelAwsSecretsManager
         $this->cacheExpiry = config('aws-secrets-manager.cache-expiry', 0);
 
         $this->cacheStore = config('aws-secrets-manager.cache-store', 'file');
+
+        $this->cacheAllSecrets = config('aws-secrets-manager.cache-key-list', '');
 
         $this->enabledEnvironments = config('aws-secrets-manager.enabled-environments', []);
 
@@ -71,16 +74,24 @@ class LaravelAwsSecretsManager
             }
         }
 
+        if ($this->cacheAllSecrets) {
+            $secrets = Cache::store($this->cacheStore)->get($this->cacheAllSecrets);
+            if (!is_array($secrets)) {
+                return false;
+            }
+            foreach ($secrets as $name) {
+                $value = Cache::store($this->cacheStore)->get($name);
+                putenv("$name=$value");
+            }
+        }
+
         return true;
     }
 
     protected function getVariables()
     {
         try {
-            $this->client = new SecretsManagerClient([
-                'version' => '2017-10-17',
-                'region' => config('aws-secrets-manager.region'),
-            ]);
+            $this->client = $this->getSecretsManagerClient();
 
             $secrets = $this->client->listSecrets([
                 'Filters' => [
@@ -101,6 +112,8 @@ class LaravelAwsSecretsManager
             return;
         }
 
+        $allVariables = [];
+
         foreach ($secrets['SecretList'] as $secret) {
             if (isset($secret['ARN'])) {
                 $result = $this->client->getSecretValue([
@@ -114,15 +127,21 @@ class LaravelAwsSecretsManager
                         $key = $secretValues['name'];
                         $secret = $secretValues['value'];
                         putenv("$key=$secret");
+                        $allVariables[] = $key;
                         $this->storeToCache($key, $secret);
                     } else {
                         foreach ($secretValues as $key => $value) {
                             putenv("$key=$value");
+                            $allVariables[] = $key;
                             $this->storeToCache($key, $value);
                         }
                     }
                 }
             }
+        }
+
+        if (!empty($allVariables) && $this->cacheAllSecrets) {
+            $this->storeToCache($this->cacheAllSecrets, $allVariables);
         }
     }
 
@@ -138,5 +157,13 @@ class LaravelAwsSecretsManager
         if ($this->cache) {
             Cache::store($this->cacheStore)->put($name, $val, $this->cacheExpiry * 60);
         }
+    }
+
+    protected function getSecretsManagerClient()
+    {
+        return new SecretsManagerClient([
+            'version' => '2017-10-17',
+            'region' => config('aws-secrets-manager.region'),
+        ]);
     }
 }
