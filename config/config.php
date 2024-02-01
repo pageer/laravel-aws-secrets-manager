@@ -90,6 +90,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Cache Key List
+    |--------------------------------------------------------------------------
+    |
+    | Defines a cache key where the entire list of secret names should be cached.
+    | When set, this will cause ALL values retreived from AWS to be cached and
+    | restored to environment variables, even if they are not in the config.
+    |
+    | If this is not set, only the items in variables-config will be restored
+    | from the cache.
+    |
+    */
+
+    'cache-key-list' => '',
+
+    /*
+    |--------------------------------------------------------------------------
     | Debugging
     |--------------------------------------------------------------------------
     |
